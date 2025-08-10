@@ -26,8 +26,10 @@ CORS(app)
 # Global model reference
 model = None
 
+
 MODEL_PATH = 'semantic_similarity_model.pkl'
 TRAIN_DATA_PATH = 'DataNeuron_DataScience_Task1/DataNeuron_Text_Similarity.csv'
+load_model()
 
 def load_model():
     """Load model from disk or create a new one without eager transformer downloads."""
