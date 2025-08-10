@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Global model reference
 model = None
-
-
 MODEL_PATH = 'semantic_similarity_model.pkl'
 TRAIN_DATA_PATH = 'DataNeuron_DataScience_Task1/DataNeuron_Text_Similarity.csv'
 
@@ -89,7 +86,8 @@ def batch_similarity():
         if not isinstance(pairs, list):
             return jsonify({'error': 'pairs must be a list'}), 400
 
-        results = []
+        texts = []
+        valid_pairs = []
         for i, pair in enumerate(pairs):
             if not isinstance(pair, dict):
                 return jsonify({'error': f'Invalid pair at index {i}'}), 400
@@ -100,7 +98,20 @@ def batch_similarity():
             if not isinstance(text1, str) or not isinstance(text2, str):
                 return jsonify({'error': f'Texts must be strings at index {i}'}), 400
 
-            score = model.compute_similarity(text1, text2)
+            valid_pairs.append((text1, text2))
+            texts.extend([text1, text2])
+
+        unique_texts = list(set(texts))
+        embeddings_map = {}
+        embeddings = model.model.encode(unique_texts, convert_to_numpy=True, show_progress_bar=False)
+
+        for idx, text in enumerate(unique_texts):
+            embeddings_map[text] = embeddings[idx]
+        results = []
+        for text1, text2 in valid_pairs:
+            emb1 = embeddings_map[text1]
+            emb2 = embeddings_map[text2]
+            score = float(util.cos_sim(emb1, emb2))  # cosine similarity
             results.append({'text1': text1, 'text2': text2, 'similarity_score': round(score, 4)})
 
         return jsonify({'results': results}), 200
