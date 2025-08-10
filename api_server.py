@@ -13,8 +13,10 @@ import os
 import time
 from datetime import datetime
 
+
 # Import the lazy-loading model class
 from semantic_similarity_model import AdvancedSemanticSimilarityModel
+from sentence_transformers import util
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
