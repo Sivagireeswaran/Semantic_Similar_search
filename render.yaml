@@ -2,10 +2,8 @@ services:
   - type: web
     name: semantic-similarity-api
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn api_server:app
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: gunicorn api_server:create_app --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
-      - key: PORT
-        value: 5000 
+        value: 3.9.19

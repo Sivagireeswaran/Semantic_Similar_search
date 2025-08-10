@@ -9,4 +9,3 @@ gunicorn>=20.1.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 safetensors>=0.4.4
-gunicorn==20.1.0

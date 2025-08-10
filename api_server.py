@@ -12,42 +12,44 @@ import logging
 import os
 import time
 from datetime import datetime
-import json
-from semantic_similarity_model import AdvancedSemanticSimilarityModel, create_and_train_model
+
+# Import the lazy-loading model class
+from semantic_similarity_model import AdvancedSemanticSimilarityModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 
-# Global model instance
+# Global model reference
 model = None
 
+MODEL_PATH = 'semantic_similarity_model.pkl'
+TRAIN_DATA_PATH = 'DataNeuron_DataScience_Task1/DataNeuron_Text_Similarity.csv'
+
 def load_model():
-    """Load the semantic similarity model"""
+    """Load model from disk or create a new one without eager transformer downloads."""
     global model
     try:
-        model_path = 'semantic_similarity_model.pkl'
-        if os.path.exists(model_path):
-            logger.info("Loading existing model...")
-            model = AdvancedSemanticSimilarityModel.load_model(model_path)
+        if os.path.exists(MODEL_PATH):
+            logger.info(f"Loading model from {MODEL_PATH}...")
+            model = AdvancedSemanticSimilarityModel.load_model(MODEL_PATH)
         else:
-            logger.info("Creating new model...")
-            model = create_and_train_model('DataNeuron_DataScience_Task1/DataNeuron_Text_Similarity.csv')
-            model.save_model(model_path)
-        
-        logger.info("Model loaded successfully")
+            logger.warning(f"No pre-trained model found at {MODEL_PATH}. Creating new instance (lazy loading).")
+            model = AdvancedSemanticSimilarityModel()
+            # Optionally: call model.train(TRAIN_DATA_PATH) here if you want runtime training
+            model.save_model(MODEL_PATH)
+
+        logger.info("Model initialized successfully (transformers will load lazily).")
         return True
     except Exception as e:
-        logger.error(f"Error loading model: {e}")
+        logger.exception(f"Error initializing model: {e}")
         return False
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -56,122 +58,70 @@ def health_check():
 
 @app.route('/similarity', methods=['POST'])
 def compute_similarity():
-    """
-    Compute semantic similarity between two texts
-    
-    Expected request body:
-    {
-        "text1": "first text paragraph",
-        "text2": "second text paragraph"
-    }
-    
-    Returns:
-    {
-        "similarity_score": 0.75
-    }
-    """
     try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No JSON data provided'}), 400
-        
+        data = request.get_json(force=True)
         text1 = data.get('text1')
         text2 = data.get('text2')
-        
+
         if not text1 or not text2:
             return jsonify({'error': 'Both text1 and text2 are required'}), 400
-        
-        if not isinstance(text1, str) or not isinstance(text2, str):
-            return jsonify({'error': 'Both text1 and text2 must be strings'}), 400
-        
-        if model is None:
-            return jsonify({'error': 'Model not loaded'}), 500
-        
+
         start_time = time.time()
         similarity_score = model.compute_similarity(text1, text2)
-        computation_time = time.time() - start_time
-        
-        logger.info(f"Similarity computed: {similarity_score:.4f} in {computation_time:.3f}s")
-        
-        response = {
-            'similarity_score': round(similarity_score, 4)
-        }
-        
-        return jsonify(response), 200
-        
+        elapsed = time.time() - start_time
+
+        logger.info(f"Computed similarity={similarity_score:.4f} in {elapsed:.3f}s")
+
+        return jsonify({'similarity_score': round(similarity_score, 4)}), 200
+
     except Exception as e:
-        logger.error(f"Error computing similarity: {e}")
+        logger.exception("Error computing similarity")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/batch_similarity', methods=['POST'])
 def batch_similarity():
-    """
-    Compute similarity for multiple text pairs
-    
-    Expected request body:
-    {
-        "pairs": [
-            {"text1": "first text", "text2": "second text"},
-            {"text1": "third text", "text2": "fourth text"}
-        ]
-    }
-    """
     try:
-        data = request.get_json()
-        
-        if not data or 'pairs' not in data:
-            return jsonify({'error': 'No pairs data provided'}), 400
-        
-        pairs = data['pairs']
-        
+        data = request.get_json(force=True)
+        pairs = data.get('pairs', [])
+
         if not isinstance(pairs, list):
             return jsonify({'error': 'pairs must be a list'}), 400
-        
+
         results = []
-        
         for i, pair in enumerate(pairs):
-            if not isinstance(pair, dict) or 'text1' not in pair or 'text2' not in pair:
-                return jsonify({'error': f'Invalid pair format at index {i}'}), 400
-            
-            text1 = pair['text1']
-            text2 = pair['text2']
-            
+            if not isinstance(pair, dict):
+                return jsonify({'error': f'Invalid pair at index {i}'}), 400
+
+            text1 = pair.get('text1')
+            text2 = pair.get('text2')
+
             if not isinstance(text1, str) or not isinstance(text2, str):
                 return jsonify({'error': f'Texts must be strings at index {i}'}), 400
-            
-            similarity_score = model.compute_similarity(text1, text2)
-            results.append({
-                'text1': text1,
-                'text2': text2,
-                'similarity_score': round(similarity_score, 4)
-            })
-        
+
+            score = model.compute_similarity(text1, text2)
+            results.append({'text1': text1, 'text2': text2, 'similarity_score': round(score, 4)})
+
         return jsonify({'results': results}), 200
-        
+
     except Exception as e:
-        logger.error(f"Error in batch similarity: {e}")
+        logger.exception("Error in batch similarity")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/model_info', methods=['GET'])
 def model_info():
-    """Get information about the loaded model"""
     if model is None:
         return jsonify({'error': 'Model not loaded'}), 500
-    
-    info = {
+
+    return jsonify({
         'model_name': model.model_name,
         'device': model.device,
-        'is_fitted': model.is_fitted,
+        'is_fitted': getattr(model, 'is_fitted', False),
         'ensemble_models': len(model.ensemble_models),
         'loaded_at': datetime.now().isoformat()
-    }
-    
-    return jsonify(info), 200
+    })
 
 @app.route('/', methods=['GET'])
 def root():
-    """Root endpoint with API information"""
     return jsonify({
         'message': 'Semantic Text Similarity API',
         'version': '1.0.0',
@@ -191,28 +141,24 @@ def root():
             }
         }
     }), 200
-
 @app.errorhandler(404)
-def not_found(error):
+def not_found(_):
     return jsonify({'error': 'Endpoint not found'}), 404
 
 @app.errorhandler(500)
-def internal_error(error):
+def internal_error(_):
     return jsonify({'error': 'Internal server error'}), 500
 
 def create_app():
-    """Application factory for deployment"""
     if not load_model():
         logger.error("Failed to load model")
         return None
-    
     return app
 
 if __name__ == '__main__':
     if load_model():
         port = int(os.environ.get('PORT', 5000))
-        
         logger.info(f"Starting server on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False)
+        app.run(host='0.0.0.0', port=port)
     else:
-        logger.error("Failed to start server - model not loaded") 
+        logger.error("Model failed to load; server not started.")
